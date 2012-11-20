@@ -4,7 +4,11 @@
 #include <debug.h>
 #include <list.h>
 #include <stdint.h>
-
+#include <threads/synch.h>
+#define	PROCESS_INITIALIZING	1
+#define	PROCESS_STARTED			2
+#define	PROCESS_EXITED			3
+#define PROCESS_FAILED			4
 /* States in a thread's life cycle. */
 enum thread_status
   {
@@ -14,9 +18,22 @@ enum thread_status
     THREAD_DYING        /* About to be destroyed. */
   };
 
+typedef int tid_t;
+
+/* 
+every thread has a child element, which is used to indicate the current state of the thread. This gets pushed to the parent's child_list
+*/
+struct child
+{
+	int		exit_code;
+	char 	state;
+	struct thread *parent;
+	tid_t 	tid;
+	struct 	list_elem elem;
+};
+
 /* Thread identifier type.
    You can redefine this to whatever type you like. */
-typedef int tid_t;
 #define TID_ERROR ((tid_t) -1)          /* Error value for tid_t. */
 
 /* Thread priorities. */
@@ -89,6 +106,20 @@ struct thread
     uint8_t *stack;                     /* Saved stack pointer. */
     int priority;                       /* Priority. */
     struct list_elem allelem;           /* List element for all threads list. */
+	bool user_thread;
+	int return_status;
+	
+	struct child *myself;				/* Thread's current state identifier. */
+	struct list child_list;				/* represents the threads list of children. */
+	struct file *my_binary;				/* indicates the thread's binary file. */
+	struct list file_list;				/* represents the list of opened files by the thread. */
+	int 	FD_CURRENT;					/* indicates the thread's next available File Descriptor. */
+	
+	/* 
+		lock and condition variable of the thread used by the child to notify the thread of change in its state. 
+	*/
+	struct lock status_change_lock;	
+	struct condition status_change;
 
     /* Shared between thread.c and synch.c. */
     struct list_elem elem;              /* List element. */

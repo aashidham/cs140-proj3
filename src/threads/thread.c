@@ -11,6 +11,8 @@
 #include "threads/switch.h"
 #include "threads/synch.h"
 #include "threads/vaddr.h"
+#include "threads/malloc.h"
+#include "threads/malloc.h"
 #ifdef USERPROG
 #include "userprog/process.h"
 #endif
@@ -203,8 +205,19 @@ thread_create (const char *name, int priority,
   sf = alloc_frame (t, sizeof *sf);
   sf->eip = switch_entry;
   sf->ebp = 0;
-
+  
+	/* pushes the thread to child_list of the running thread. */
+	t->myself	=	(struct child *)malloc(sizeof (struct child));
+	t->myself->parent	=	running_thread();
+	t->myself->tid		=	tid;
+	t->myself->state	=	PROCESS_INITIALIZING;
+	//printf("tid created %d\n",tid);
+	//printf("parent tid %d\n",t->myself->parent->tid);
+	list_push_back(&running_thread()->child_list,&t->myself->elem);
+	
+  
   intr_set_level (old_level);
+  
 
   /* Add to run queue. */
   thread_unblock (t);
@@ -469,6 +482,13 @@ init_thread (struct thread *t, const char *name, int priority)
   t->stack = (uint8_t *) t + PGSIZE;
   t->priority = priority;
   t->magic = THREAD_MAGIC;
+  
+  /* marks the next available FD ID to be 2. */
+  t->FD_CURRENT	=	2;
+  cond_init (&t->status_change);
+  lock_init (&t->status_change_lock);
+  list_init (&t->child_list);
+  list_init (&t->file_list);
   list_push_back (&all_list, &t->allelem);
 }
 
