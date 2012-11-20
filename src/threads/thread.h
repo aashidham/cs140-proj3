@@ -127,6 +127,7 @@ struct thread
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
     uint32_t *pagedir;                  /* Page directory. */
+    struct list frame_table;			/* Lists frames that contain a user page*/
 #endif
 
     /* Owned by thread.c. */

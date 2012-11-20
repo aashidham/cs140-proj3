@@ -411,8 +411,9 @@ load (const char *file_name, void (**eip) (void), void **esp)
   bool success = false;
   int i;
 
-  /* Allocate and activate page directory. */
+  /* Allocate and activate page directory and frame table. */
   t->pagedir = pagedir_create ();
+  list_init(&t->frame_table);
   if (t->pagedir == NULL) 
     goto done;
   process_activate ();
@@ -662,6 +663,9 @@ install_page (void *upage, void *kpage, bool writable)
 
   /* Verify that there's not already a page at that virtual
      address, then map our page there. */
-  return (pagedir_get_page (t->pagedir, upage) == NULL
-          && pagedir_set_page (t->pagedir, upage, kpage, writable));
+  bool success = pagedir_get_page (t->pagedir, upage) == NULL
+          && pagedir_set_page (t->pagedir, upage, kpage, writable);
+ if(success)
+ 	list_push_back(&t->frame_table,kpage);
+ return success;
 }
