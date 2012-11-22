@@ -616,7 +616,7 @@ load_segment (const char *file_name, off_t ofs, uint8_t *upage,
       read_bytes -= page_read_bytes;
       zero_bytes -= page_zero_bytes;
       upage += PGSIZE;
-      ofs += PGSIZE;
+      ofs += page_read_bytes;
     }
   return true;
 }
