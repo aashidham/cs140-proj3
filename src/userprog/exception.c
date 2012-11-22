@@ -165,11 +165,11 @@ page_fault (struct intr_frame *f)
   /* To implement virtual memory, delete the rest of the function
      body, and replace it with code that brings in the page to
      which fault_addr refers. */
-  printf ("Page fault at %p: %s | %s | %s \n",
+  /*printf ("Page fault at %p: %s | %s | %s \n",
           fault_addr,
           not_present ? "not present page" : "writing r/o page",
           write ? "writing access" : "reading access",
-          user ? "user access" : "kernel access");
+          user ? "user access" : "kernel access");*/
   
   //bool found = false;
   struct list_elem *e;
@@ -184,29 +184,24 @@ page_fault (struct intr_frame *f)
           	size_t page_zero_bytes = curr->page_zero_bytes;
           	const char* file_name = curr->file_name;
           	bool writable = curr->writable;
-          	printf("page fault found at %p! (%s) (offset: %d) (eip:%d,%p)\n",upage,writable? "writable":"not writable",(int)curr->ofs,f->cs,f->eip);
+          	//printf("page fault found at %p! (%s) (offset: %d) (eip:%d,%p)\n",upage,writable? "writable":"not writable",(int)curr->ofs,f->cs,f->eip);
           	//found = true;
 			/* Get a page of memory. */
 			uint8_t *kpage = palloc_get_page (PAL_USER);
 			if (kpage == NULL)
 			  exit(-1);
-			printf("A\n");
 			struct file* file = filesys_open (file_name);
 			if (file == NULL)
 				exit(-1);
 			file_seek (file,(int)curr->ofs);
 			/* Load this page. */
-			printf("page_read_bytes are %d\n",(int)page_read_bytes);
-			printf("file length is %d\n",file_length(file));
 			
 			if (file_read (file, kpage, page_read_bytes) != (off_t) page_read_bytes)
 			{
 			  palloc_free_page (kpage);
-			  printf("D\n");
 			  exit(-1);
 			}
 			memset (kpage + page_read_bytes, 0, page_zero_bytes);
-			printf("B\n");
 	  
 			/* Add the page to the process's address space. */
 			if (!install_page_handler (upage, kpage, writable)) 
@@ -214,21 +209,18 @@ page_fault (struct intr_frame *f)
 			  palloc_free_page (kpage);
 			  exit(-1);
 			}
-			printf("C\n");
 			/*remove page from supplementary page table*/
 			//free(curr);
 			//list_remove(e);
 			file_close (file);
 			return;
-			printf("E\n");
           }
-          printf("%p\n",upage);
         }
    //if(!found)
    		//printf("page fault not found.\n");
    		
    //address is not valid
-   printf("invalid address\n");
+   //printf("invalid address\n");
    exit(-1);
 }
 

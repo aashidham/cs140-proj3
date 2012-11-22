@@ -497,7 +497,7 @@ load (const char *file_name, void (**eip) (void), void **esp)
                   read_bytes = 0;
                   zero_bytes = ROUND_UP (page_offset + phdr.p_memsz, PGSIZE);
                 }
-                printf("Section offset is %d and is %s\n",file_page,writable? "writable":"not writable");
+                //printf("Section offset is %d and is %s\n",file_page,writable? "writable":"not writable");
               if (!load_segment (file_name, file_page, (void *) mem_page,
                                  read_bytes, zero_bytes, writable))
                 goto done;
@@ -616,6 +616,7 @@ load_segment (const char *file_name, off_t ofs, uint8_t *upage,
       read_bytes -= page_read_bytes;
       zero_bytes -= page_zero_bytes;
       upage += PGSIZE;
+      ofs += PGSIZE;
     }
   return true;
 }
@@ -665,7 +666,7 @@ static bool
 install_page (void *upage, void *kpage, bool writable)
 {
   struct thread *t = thread_current ();
-  printf("!\n");
+  //printf("!\n");
   /* Verify that there's not already a page at that virtual
      address, then map our page there. */
   bool success = (pagedir_get_page (t->pagedir, upage) == NULL
@@ -677,12 +678,12 @@ install_page (void *upage, void *kpage, bool writable)
  	list_push_back(&frame_table,&curr->elem);
  }
  struct list_elem *e;
- for (e = list_begin (&frame_table); e != list_end (&frame_table);
+ /*for (e = list_begin (&frame_table); e != list_end (&frame_table);
            e = list_next (e))
         {
           struct frame_table_entry *curr = list_entry(e,struct frame_table_entry,elem);
           printf("list elem %p\n",curr->kpage);
-        }
+        }*/
 
  return success;
 }
