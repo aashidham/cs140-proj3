@@ -5,6 +5,15 @@
 #include "userprog/syscall.h"
 #include "threads/interrupt.h"
 #include "threads/thread.h"
+#include "userprog/process.h"
+#include "threads/vaddr.h"
+#include "threads/palloc.h"
+#include "threads/malloc.h"
+#include "filesys/file.h"
+#include "filesys/filesys.h"
+#include "lib/string.h"
+#include "filesys/off_t.h"
+
 
 /* Number of page faults processed. */
 static long long page_fault_cnt;
@@ -136,16 +145,15 @@ page_fault (struct intr_frame *f)
      [IA32-v3a] 5.15 "Interrupt 14--Page Fault Exception
      (#PF)". */
   asm ("movl %%cr2, %0" : "=r" (fault_addr));
-
- if(fault_addr==0)
-	exit(-1);
+ //if(fault_addr==0)
+	//exit(-1);
 	
-  if(!check_pointer(fault_addr))
-  	exit(-1);
+  //if(!check_pointer(fault_addr))
+  	//exit(-1);
   /* Turn interrupts back on (they were only off so that we could
      be assured of reading CR2 before it changed). */
   intr_enable ();
-
+  struct thread *t = thread_current ();
   /* Count page faults. */
   page_fault_cnt++;
 
@@ -157,11 +165,70 @@ page_fault (struct intr_frame *f)
   /* To implement virtual memory, delete the rest of the function
      body, and replace it with code that brings in the page to
      which fault_addr refers. */
-  printf ("Page fault at %p: %s error %s page in %s context.\n",
+  printf ("Page fault at %p: %s | %s | %s \n",
           fault_addr,
-          not_present ? "not present" : "rights violation",
-          write ? "writing" : "reading",
-          user ? "user" : "kernel");
-  kill (f);
+          not_present ? "not present page" : "writing r/o page",
+          write ? "writing access" : "reading access",
+          user ? "user access" : "kernel access");
+  
+  //bool found = false;
+  struct list_elem *e;
+  for (e = list_begin (&t->supp_page_table); e != list_end (&t->supp_page_table);
+           e = list_next (e))
+        {
+          struct supp_page_table_entry *curr = list_entry(e,struct supp_page_table_entry,elem);
+          uint8_t *upage = curr->upage;
+          if(upage <= (uint8_t *)fault_addr && (uint8_t *)fault_addr <= upage + PGSIZE)
+          {
+          	size_t page_read_bytes = curr->page_read_bytes;
+          	size_t page_zero_bytes = curr->page_zero_bytes;
+          	const char* file_name = curr->file_name;
+          	bool writable = curr->writable;
+          	printf("page fault found at %p! (%s) (offset: %d) (eip:%d,%p)\n",upage,writable? "writable":"not writable",(int)curr->ofs,f->cs,f->eip);
+          	//found = true;
+			/* Get a page of memory. */
+			uint8_t *kpage = palloc_get_page (PAL_USER);
+			if (kpage == NULL)
+			  exit(-1);
+			printf("A\n");
+			struct file* file = filesys_open (file_name);
+			if (file == NULL)
+				exit(-1);
+			file_seek (file,(int)curr->ofs);
+			/* Load this page. */
+			printf("page_read_bytes are %d\n",(int)page_read_bytes);
+			printf("file length is %d\n",file_length(file));
+			
+			if (file_read (file, kpage, page_read_bytes) != (off_t) page_read_bytes)
+			{
+			  palloc_free_page (kpage);
+			  printf("D\n");
+			  exit(-1);
+			}
+			memset (kpage + page_read_bytes, 0, page_zero_bytes);
+			printf("B\n");
+	  
+			/* Add the page to the process's address space. */
+			if (!install_page_handler (upage, kpage, writable)) 
+			{
+			  palloc_free_page (kpage);
+			  exit(-1);
+			}
+			printf("C\n");
+			/*remove page from supplementary page table*/
+			//free(curr);
+			//list_remove(e);
+			file_close (file);
+			return;
+			printf("E\n");
+          }
+          printf("%p\n",upage);
+        }
+   //if(!found)
+   		//printf("page fault not found.\n");
+   		
+   //address is not valid
+   printf("invalid address\n");
+   exit(-1);
 }
 

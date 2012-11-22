@@ -401,7 +401,7 @@ struct Elf32_Phdr
 
 static bool setup_stack (void **esp);
 static bool validate_segment (const struct Elf32_Phdr *, struct file *);
-static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
+static bool load_segment (const char *file_name, off_t ofs, uint8_t *upage,
                           uint32_t read_bytes, uint32_t zero_bytes,
                           bool writable);
 
@@ -419,9 +419,10 @@ load (const char *file_name, void (**eip) (void), void **esp)
   bool success = false;
   int i;
 
-  /* Allocate and activate page directory. */
+  /* Allocate and activate page directory, supplementary page table and frame table. */
   t->pagedir = pagedir_create ();
   list_init(&frame_table);
+  list_init(&t->supp_page_table);
   if (t->pagedir == NULL) 
     goto done;
   process_activate ();
@@ -496,7 +497,8 @@ load (const char *file_name, void (**eip) (void), void **esp)
                   read_bytes = 0;
                   zero_bytes = ROUND_UP (page_offset + phdr.p_memsz, PGSIZE);
                 }
-              if (!load_segment (file, file_page, (void *) mem_page,
+                printf("Section offset is %d and is %s\n",file_page,writable? "writable":"not writable");
+              if (!load_segment (file_name, file_page, (void *) mem_page,
                                  read_bytes, zero_bytes, writable))
                 goto done;
             }
@@ -585,14 +587,13 @@ validate_segment (const struct Elf32_Phdr *phdr, struct file *file)
    Return true if successful, false if a memory allocation error
    or disk read error occurs. */
 static bool
-load_segment (struct file *file, off_t ofs, uint8_t *upage,
+load_segment (const char *file_name, off_t ofs, uint8_t *upage,
               uint32_t read_bytes, uint32_t zero_bytes, bool writable) 
 {
   ASSERT ((read_bytes + zero_bytes) % PGSIZE == 0);
   ASSERT (pg_ofs (upage) == 0);
   ASSERT (ofs % PGSIZE == 0);
 
-  file_seek (file, ofs);
   while (read_bytes > 0 || zero_bytes > 0) 
     {
       /* Calculate how to fill this page.
@@ -600,26 +601,16 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
          and zero the final PAGE_ZERO_BYTES bytes. */
       size_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
       size_t page_zero_bytes = PGSIZE - page_read_bytes;
+      
+      struct supp_page_table_entry *curr = malloc(sizeof(struct supp_page_table_entry));
+      curr->upage = upage;
+      curr->page_read_bytes = page_read_bytes;
+      curr->page_zero_bytes = page_zero_bytes;
+      curr->file_name = file_name;
+      curr->ofs = ofs;
+      curr->writable = writable;
+      list_push_back(&thread_current()->supp_page_table,&curr->elem);
 
-      /* Get a page of memory. */
-      uint8_t *kpage = palloc_get_page (PAL_USER);
-      if (kpage == NULL)
-        return false;
-
-      /* Load this page. */
-      if (file_read (file, kpage, page_read_bytes) != (int) page_read_bytes)
-        {
-          palloc_free_page (kpage);
-          return false; 
-        }
-      memset (kpage + page_read_bytes, 0, page_zero_bytes);
-
-      /* Add the page to the process's address space. */
-      if (!install_page (upage, kpage, writable)) 
-        {
-          palloc_free_page (kpage);
-          return false; 
-        }
 
       /* Advance. */
       read_bytes -= page_read_bytes;
@@ -655,6 +646,11 @@ setup_stack (void **esp)
   return success;
 }
 
+bool install_page_handler(void *upage, void *kpage, bool writable)
+{
+	return install_page (upage, kpage, writable);
+}
+
 
 /* Adds a mapping from user virtual address UPAGE to kernel
    virtual address KPAGE to the page table.
@@ -669,7 +665,7 @@ static bool
 install_page (void *upage, void *kpage, bool writable)
 {
   struct thread *t = thread_current ();
-
+  printf("!\n");
   /* Verify that there's not already a page at that virtual
      address, then map our page there. */
   bool success = (pagedir_get_page (t->pagedir, upage) == NULL
@@ -681,12 +677,12 @@ install_page (void *upage, void *kpage, bool writable)
  	list_push_back(&frame_table,&curr->elem);
  }
  struct list_elem *e;
- /*for (e = list_begin (&frame_table); e != list_end (&frame_table);
+ for (e = list_begin (&frame_table); e != list_end (&frame_table);
            e = list_next (e))
         {
           struct frame_table_entry *curr = list_entry(e,struct frame_table_entry,elem);
           printf("list elem %p\n",curr->kpage);
-        }*/
+        }
 
  return success;
 }
