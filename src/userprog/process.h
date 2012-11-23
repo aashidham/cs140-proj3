@@ -9,6 +9,7 @@ int process_wait (tid_t);
 void process_exit (void);
 void process_activate (void);
 bool install_page_handler (void *upage, void *kpage, bool writable);
+struct list frame_table;			/* Lists frames that contain a user page*/
 
 struct supp_page_table_entry
 {

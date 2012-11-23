@@ -26,7 +26,6 @@ static bool load (const char *cmdline, void (**eip) (void), void **esp);
 static struct child *get_child_pointer(tid_t tid);
 static void notify_parent(struct thread *my_parent);
 
-static struct list frame_table;			/* Lists frames that contain a user page*/
 struct frame_table_entry
 {
 	struct list_elem elem;
@@ -421,7 +420,6 @@ load (const char *file_name, void (**eip) (void), void **esp)
 
   /* Allocate and activate page directory, supplementary page table and frame table. */
   t->pagedir = pagedir_create ();
-  list_init(&frame_table);
   list_init(&t->supp_page_table);
   if (t->pagedir == NULL) 
     goto done;
@@ -676,13 +674,18 @@ install_page (void *upage, void *kpage, bool writable)
  	struct frame_table_entry* curr = malloc(sizeof(struct frame_table_entry));
  	curr->kpage = (uint8_t *)kpage;
  	list_push_back(&frame_table,&curr->elem);
+ 	//printf("Page table entry for %s thread at %p\n",t->name,upage);
  }
+ else
+ {
+ 	//printf("%p already exists inside %s's page table\n",upage,t->name);
+ 	}
  struct list_elem *e;
  /*for (e = list_begin (&frame_table); e != list_end (&frame_table);
            e = list_next (e))
         {
           struct frame_table_entry *curr = list_entry(e,struct frame_table_entry,elem);
-          printf("list elem %p\n",curr->kpage);
+          printf("frame table elem %p\n",curr->kpage);
         }*/
 
  return success;

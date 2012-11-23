@@ -12,6 +12,7 @@
 #include "filesys/file.h"
 #include "filesys/filesys.h"
 #include "lib/string.h"
+#include "lib/round.h"
 #include "filesys/off_t.h"
 
 
@@ -178,7 +179,7 @@ page_fault (struct intr_frame *f)
         {
           struct supp_page_table_entry *curr = list_entry(e,struct supp_page_table_entry,elem);
           uint8_t *upage = curr->upage;
-          if(upage <= (uint8_t *)fault_addr && (uint8_t *)fault_addr <= upage + PGSIZE)
+          if(upage == (uint8_t *) ROUND_DOWN((uintptr_t)fault_addr, PGSIZE))
           {
           	size_t page_read_bytes = curr->page_read_bytes;
           	size_t page_zero_bytes = curr->page_zero_bytes;
