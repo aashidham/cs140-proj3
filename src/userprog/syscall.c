@@ -69,7 +69,6 @@ bool check_pointer(void *ptr)
 	struct thread *t = thread_current();
 	if(!ptr)									return false;
 	if(!is_user_vaddr(ptr))						return false;
-	if(!pagedir_get_page(t->pagedir, ptr))		return false;
 	
 	return true;
 }
