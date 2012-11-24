@@ -70,13 +70,29 @@ void munmap (mapid_t mapid);
 mapid_t mmap (int fd, void *addr);
 
 
-/* this function checks if the pointer passed to it is valid or not. */
-bool check_pointer(void *ptr)
+bool check_pointer_unmapped(void *ptr)
 {
 	if(!ptr)									return false;
 	if(!is_user_vaddr(ptr))						return false;
-	
 	return true;
+}
+
+/* this function checks if the pointer passed to it is valid or not. */
+bool check_pointer(void *ptr)
+{
+	struct thread *t = thread_current();
+	if(!ptr)									return false;
+	if(!is_user_vaddr(ptr))						return false;
+	if(pagedir_get_page(t->pagedir, ptr))    	return true;
+	struct list_elem *e;
+	for (e = list_begin (&t->supp_page_table); e != list_end (&t->supp_page_table);e = list_next (e))
+	{
+		struct supp_page_table_entry *curr = list_entry(e,struct supp_page_table_entry,elem);
+		if(ROUND_DOWN((uintptr_t)ptr, PGSIZE) == (uintptr_t)curr->upage) return true;
+	}
+	
+	
+	return false;
 }
 /* closes the files opened by thread t	*/
 void close_files(struct thread *t)
@@ -335,7 +351,7 @@ mapid_t mmap (int fd, void *addr)
 {
 	struct file *f=get_file_pointer(fd);
 	struct thread *t = thread_current();
-	if(f && filesize(fd) != 0 && (uint32_t) addr % PGSIZE == 0 && check_pointer(addr))
+	if(f && filesize(fd) != 0 && (uint32_t) addr % PGSIZE == 0 && check_pointer_unmapped(addr))
 	{
 		int total_pages_needed = DIV_ROUND_UP(filesize(fd), PGSIZE);
 		int i;
