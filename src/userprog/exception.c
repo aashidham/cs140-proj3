@@ -183,7 +183,6 @@ page_fault (struct intr_frame *f)
           {
           	size_t page_read_bytes = curr->page_read_bytes;
           	size_t page_zero_bytes = curr->page_zero_bytes;
-          	const char* file_name = curr->file_name;
           	bool writable = curr->writable;
           	//printf("page fault found at %p! (%s) (offset: %d) (eip:%d,%p)\n",upage,writable? "writable":"not writable",(int)curr->ofs,f->cs,f->eip);
           	//found = true;
@@ -191,7 +190,7 @@ page_fault (struct intr_frame *f)
 			uint8_t *kpage = palloc_get_page (PAL_USER);
 			if (kpage == NULL)
 			  exit(-1);
-			struct file* file = filesys_open (file_name);
+			struct file* file = t->my_binary;
 			if (file == NULL)
 				exit(-1);
 			file_seek (file,(int)curr->ofs);
@@ -213,7 +212,6 @@ page_fault (struct intr_frame *f)
 			/*remove page from supplementary page table*/
 			//free(curr);
 			//list_remove(e);
-			file_close (file);
 			return;
           }
         }

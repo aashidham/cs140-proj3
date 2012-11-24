@@ -66,7 +66,6 @@ void halt(void);
 /* this function checks if the pointer passed to it is valid or not. */
 bool check_pointer(void *ptr)
 {
-	struct thread *t = thread_current();
 	if(!ptr)									return false;
 	if(!is_user_vaddr(ptr))						return false;
 	

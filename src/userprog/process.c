@@ -400,7 +400,7 @@ struct Elf32_Phdr
 
 static bool setup_stack (void **esp);
 static bool validate_segment (const struct Elf32_Phdr *, struct file *);
-static bool load_segment (const char *file_name, off_t ofs, uint8_t *upage,
+static bool load_segment (off_t ofs, uint8_t *upage,
                           uint32_t read_bytes, uint32_t zero_bytes,
                           bool writable);
 
@@ -496,7 +496,7 @@ load (const char *file_name, void (**eip) (void), void **esp)
                   zero_bytes = ROUND_UP (page_offset + phdr.p_memsz, PGSIZE);
                 }
                 //printf("Section offset is %d and is %s\n",file_page,writable? "writable":"not writable");
-              if (!load_segment (file_name, file_page, (void *) mem_page,
+              if (!load_segment (file_page, (void *) mem_page,
                                  read_bytes, zero_bytes, writable))
                 goto done;
             }
@@ -585,7 +585,7 @@ validate_segment (const struct Elf32_Phdr *phdr, struct file *file)
    Return true if successful, false if a memory allocation error
    or disk read error occurs. */
 static bool
-load_segment (const char *file_name, off_t ofs, uint8_t *upage,
+load_segment (off_t ofs, uint8_t *upage,
               uint32_t read_bytes, uint32_t zero_bytes, bool writable) 
 {
   ASSERT ((read_bytes + zero_bytes) % PGSIZE == 0);
@@ -604,7 +604,6 @@ load_segment (const char *file_name, off_t ofs, uint8_t *upage,
       curr->upage = upage;
       curr->page_read_bytes = page_read_bytes;
       curr->page_zero_bytes = page_zero_bytes;
-      curr->file_name = file_name;
       curr->ofs = ofs;
       curr->writable = writable;
       list_push_back(&thread_current()->supp_page_table,&curr->elem);
@@ -680,8 +679,8 @@ install_page (void *upage, void *kpage, bool writable)
  {
  	//printf("%p already exists inside %s's page table\n",upage,t->name);
  	}
- struct list_elem *e;
- /*for (e = list_begin (&frame_table); e != list_end (&frame_table);
+ /*struct list_elem *e;
+ for (e = list_begin (&frame_table); e != list_end (&frame_table);
            e = list_next (e))
         {
           struct frame_table_entry *curr = list_entry(e,struct frame_table_entry,elem);

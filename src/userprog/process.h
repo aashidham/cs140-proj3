@@ -17,7 +17,6 @@ struct supp_page_table_entry
 	uint8_t *upage;
 	size_t page_read_bytes;
 	size_t page_zero_bytes;
-	const char* file_name;
 	off_t ofs;
 	bool writable;
 };
