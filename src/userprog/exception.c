@@ -210,8 +210,8 @@ page_fault (struct intr_frame *f)
 			  exit(-1);
 			}
 			/*remove page from supplementary page table*/
-			//free(curr);
-			//list_remove(e);
+			list_remove(e);
+			free(curr);
 			return;
           }
         }
