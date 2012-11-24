@@ -190,7 +190,11 @@ page_fault (struct intr_frame *f)
 			uint8_t *kpage = palloc_get_page (PAL_USER);
 			if (kpage == NULL)
 			  exit(-1);
-			struct file* file = t->my_binary;
+			struct file* file;
+			if(!curr->mmaped_file)
+				file = t->my_binary;
+			else
+				file = curr->mmaped_file;
 			if (file == NULL)
 				exit(-1);
 			file_seek (file,(int)curr->ofs);
@@ -209,9 +213,12 @@ page_fault (struct intr_frame *f)
 			  palloc_free_page (kpage);
 			  exit(-1);
 			}
-			/*remove page from supplementary page table*/
-			list_remove(e);
-			free(curr);
+			/*remove page from supplementary page table. mmap calls handle teardown differently.*/
+			if(!curr->mmaped_file)
+			{
+				list_remove(e);
+				free(curr);
+			}
 			return;
           }
         }
@@ -219,7 +226,8 @@ page_fault (struct intr_frame *f)
    		//printf("page fault not found.\n");
    		
    //address is not valid
-   //printf("invalid address\n");
+   //printf("invalid address %p\n",fault_addr);
    exit(-1);
 }
+
 

@@ -8,6 +8,9 @@
 #include "threads/thread.h"
 #include "threads/vaddr.h"
 #include "threads/malloc.h"
+#include "threads/palloc.h"
+#include "lib/user/syscall.h"
+#include "lib/round.h"
 
 #include "userprog/pagedir.h"
 #include "userprog/process.h"
@@ -35,6 +38,8 @@ int num_args[]	=
 	2,	/* Change position in a file. */
 	1,	/* Report current position in a file. */
 	1,	/* Close a file. */
+	2, 	/* mmap */
+	1,  /* munmap */
 };
 
 /* utility functions */
@@ -61,6 +66,8 @@ int exec (const char * cmd_line);
 void close (int fd);
 int wait (int pid);
 void halt(void);
+void munmap (mapid_t mapid);
+mapid_t mmap (int fd, void *addr);
 
 
 /* this function checks if the pointer passed to it is valid or not. */
@@ -195,6 +202,18 @@ int open (const char *file)
 /* exit system call. calls user_process_exit(status) defined in process.c */
 void exit (int status)
 {
+	struct thread *t = thread_current();
+	struct list_elem *e = list_begin (&t->supp_page_table);
+	while (e != list_end (&t->supp_page_table))
+	{
+	  struct supp_page_table_entry *curr = list_entry(e,struct supp_page_table_entry,elem);
+	  if(curr->mmaped_id != 0)
+	  {
+	  	file_close(curr->mmaped_file);
+	  }
+	  e = list_remove(e);
+	  free(curr);
+	}
 	user_process_exit(status);
 	thread_exit();
 }
@@ -250,7 +269,9 @@ int exec (const char *cmd_line)
 {
 	if(!check_pointer((void *)cmd_line))
 		exit(-1);
+	//printf("cmd '%s'\n",cmd_line);
 	int t=process_execute(cmd_line);
+	//printf("and tid %d\n",t);
 	if(t!=TID_ERROR)
 		return t;
 	return -1;
@@ -306,6 +327,71 @@ void close (int fd)
 	free(ele);
 }
 
+mapid_t mmap (int fd, void *addr)
+{
+	struct file *f=get_file_pointer(fd);
+	struct thread *t = thread_current();
+	if(f && filesize(fd) != 0 && (uint32_t) addr % PGSIZE == 0 && check_pointer(addr))
+	{
+		int total_pages_needed = DIV_ROUND_UP(filesize(fd), PGSIZE);
+		int i;
+		for(i = 0; i < total_pages_needed; i++)
+		{
+			if(pagedir_get_page (t->pagedir, addr + i*PGSIZE)) return -1;
+			struct list_elem *e;
+  			for (e = list_begin (&t->supp_page_table); e != list_end (&t->supp_page_table);e = list_next (e))
+        	{
+          		struct supp_page_table_entry *curr = list_entry(e,struct supp_page_table_entry,elem);
+	          	if(addr + i*PGSIZE == curr->upage) return -1;
+	        }
+		}
+		struct file *mmapedf = file_reopen(f);
+		for(i = 0; i < total_pages_needed; i++)
+		{
+			struct supp_page_table_entry *curr = malloc(sizeof(struct supp_page_table_entry));
+			curr->upage = addr + i*PGSIZE;
+			int left_to_read = filesize(fd) - i * PGSIZE;
+			int read = left_to_read < PGSIZE ? left_to_read : PGSIZE;
+			curr->page_read_bytes = read;
+			curr->page_zero_bytes = PGSIZE - read;
+			curr->ofs = i*PGSIZE;
+			curr->writable = true;
+			curr->mmaped_file = mmapedf;
+			curr->mmaped_id = fd;
+			list_push_back(&t->supp_page_table,&curr->elem);
+			//printf("mmap -- %d entry with %d read bytes and %d zero bytes. filesize is %d.\n",i,read,PGSIZE - read,filesize(fd));
+		}
+		return fd;
+	}
+	else return -1;
+	
+}
+
+void munmap (mapid_t mapid)
+{
+	struct thread *t = thread_current();
+	struct list_elem *e = list_begin (&t->supp_page_table);
+	while (e != list_end (&t->supp_page_table))
+	{
+	  struct supp_page_table_entry *curr = list_entry(e,struct supp_page_table_entry,elem);
+	  if(curr->mmaped_id == mapid)
+	  {
+	  	if(pagedir_is_dirty(t->pagedir,curr->upage))
+	  	{
+	  		file_seek(curr->mmaped_file,(int)curr->ofs);
+	  		file_write(curr->mmaped_file,curr->upage,PGSIZE);
+	  	}
+	  	void *kpage =  pagedir_get_page(t->pagedir,curr->upage);
+	  	palloc_free_page(kpage);
+	  	pagedir_clear_page(t->pagedir,curr->upage);
+	  	file_close(curr->mmaped_file);
+	  	e = list_remove(e);
+	  	free(curr);
+	  }
+	  else e = list_next(e);
+	}
+}
+
 
 void
 syscall_init (void) 
@@ -353,6 +439,8 @@ syscall_handler (struct intr_frame *f UNUSED)
 		case 11:	f->eax=tell((int)arguments[0]);											return;
 
 		case 12:	close((int)arguments[0]);												return;
+		case 13:	f->eax=mmap((int)arguments[0],(void*)arguments[1]); 					return;
+		case 14:	munmap((mapid_t)arguments[0]);											return;
 		default:	break;
 	};
 	exit(-1);

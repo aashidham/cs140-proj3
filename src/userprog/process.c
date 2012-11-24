@@ -75,17 +75,23 @@ process_execute (const char *file_name)
 	tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
 	if (tid == TID_ERROR)
 		palloc_free_page (fn_copy); 
-	
+	//printf("A\n");
 	/* waits for the thread to change to either PROCESS_STARTED or PROCESS_FAILED state */
 	lock_acquire(&thread_current()->status_change_lock);
+	//printf("B\n");
 	struct child *p=get_child_pointer(tid);
 	while(p->state==PROCESS_INITIALIZING)
 		cond_wait(&thread_current()->status_change,&thread_current()->status_change_lock);
+	//printf("C\n");
 	lock_release(&thread_current()->status_change_lock);
+	//printf("D\n");
 	
 	/* checks if the LOAD has not failed */
 	if(p->state==PROCESS_FAILED)
+	{
+		//printf("load failed\n");
 		return TID_ERROR;
+	}
 	return tid;
 }
 
@@ -95,6 +101,7 @@ static void
 start_process (void *file_name_)
 {
 	char *file_name = file_name_;
+	//printf("In start_process with %s\n",file_name);
 	int current=0;
 	struct intr_frame if_;
 	bool success;
@@ -122,7 +129,7 @@ start_process (void *file_name_)
 	if_.cs = SEL_UCSEG;
 	if_.eflags = FLAG_IF | FLAG_MBS;
 	success = load ((thread_current()->name), &if_.eip, &if_.esp);
-
+//printf("H\n");
 	struct thread *my_parent=thread_current()->myself->parent;
 	
 	/* If load failed, quit. */
@@ -206,6 +213,7 @@ start_process (void *file_name_)
      arguments on the stack in the form of a `struct intr_frame',
      we just point the stack pointer (%esp) to our stack frame
      and jump to it. */
+    //printf("I\n");
   asm volatile ("movl %0, %%esp; jmp intr_exit" : : "g" (&if_) : "memory");
   NOT_REACHED ();
 }
@@ -411,6 +419,7 @@ static bool load_segment (off_t ofs, uint8_t *upage,
 bool
 load (const char *file_name, void (**eip) (void), void **esp) 
 {
+   //printf("E\n");
   struct thread *t = thread_current ();
   struct Elf32_Ehdr ehdr;
   struct file *file = NULL;
@@ -505,11 +514,11 @@ load (const char *file_name, void (**eip) (void), void **esp)
           break;
         }
     }
-
+//printf("F\n");
   /* Set up stack. */
   if (!setup_stack (esp))
     goto done;
-
+//printf("G\n");
   /* Start address. */
   *eip = (void (*) (void)) ehdr.e_entry;
 
@@ -606,6 +615,8 @@ load_segment (off_t ofs, uint8_t *upage,
       curr->page_zero_bytes = page_zero_bytes;
       curr->ofs = ofs;
       curr->writable = writable;
+      curr->mmaped_file = NULL;
+      curr->mmaped_id = 0;
       list_push_back(&thread_current()->supp_page_table,&curr->elem);
 
 
