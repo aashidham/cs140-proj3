@@ -207,6 +207,14 @@ void exit (int status)
 	while (e != list_end (&t->supp_page_table))
 	{
 	  struct supp_page_table_entry *curr = list_entry(e,struct supp_page_table_entry,elem);
+	  if(curr->mmaped_id)
+	  {
+	  	if(pagedir_is_dirty(t->pagedir,curr->upage))
+	  	{
+	  		file_seek(curr->mmaped_file,(int)curr->ofs);
+	  		file_write(curr->mmaped_file,curr->upage,PGSIZE);
+	  	}
+	 }
 	  e = list_remove(e);
 	  free(curr);
 	}
