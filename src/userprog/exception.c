@@ -166,7 +166,7 @@ page_fault (struct intr_frame *f)
   /* To implement virtual memory, delete the rest of the function
      body, and replace it with code that brings in the page to
      which fault_addr refers. */
-  /*(printf ("Page fault at %p: %s | %s | %s \n",
+  /*printf ("Page fault at %p: %s | %s | %s \n",
           fault_addr,
           not_present ? "not present page" : "writing r/o page",
           write ? "writing access" : "reading access",
@@ -225,7 +225,8 @@ page_fault (struct intr_frame *f)
    //if(!found)
    		//printf("page fault not found.\n");
    	char* esp = (char*) f->esp;
-   	if(esp - 4 == (char*)fault_addr || esp - 32 == (char*)fault_addr)
+   	char* faddr = (char*) fault_addr;
+   	if(esp - 4 == faddr || esp - 32 == faddr || (faddr >= esp && faddr < PHYS_BASE))
    	{
    		uint8_t *kpage = palloc_get_page (PAL_USER|PAL_ZERO);
    		if (kpage == NULL)
