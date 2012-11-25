@@ -19,8 +19,10 @@
 #include "devices/input.h"
 #include "devices/shutdown.h"
 #define min(a,b)	(a>b)?b:a
+#define STACK_SZ 1024*1024*8
 
 unsigned BUFFER_SIZE	=	256;
+static char* esp;
 
 /*indicates the number of arguments required by each system call. Comments copied from syscall-nr.h*/
 int num_args[]	=
@@ -46,6 +48,7 @@ int num_args[]	=
 struct file * get_file_pointer(int fd);
 struct file_elem * get_file_element(int fd);
 void close_files(struct thread *t);
+bool check_pointer_unmapped(void *ptr);
 bool check_pointer(void *ptr);
 bool check_filename(const char *file);
 int stdout_write (const char *buffer, unsigned size);
@@ -77,23 +80,36 @@ bool check_pointer_unmapped(void *ptr)
 	return true;
 }
 
-/* this function checks if the pointer passed to it is valid or not. */
-bool check_pointer(void *ptr)
+bool syscall_check_pointer(void *ptr, char *esp_ptr)
 {
 	struct thread *t = thread_current();
 	if(!ptr)									return false;
 	if(!is_user_vaddr(ptr))						return false;
 	if(pagedir_get_page(t->pagedir, ptr))    	return true;
 	struct list_elem *e;
+	
+	//check if addr is part of lazy-loading segment
 	for (e = list_begin (&t->supp_page_table); e != list_end (&t->supp_page_table);e = list_next (e))
 	{
 		struct supp_page_table_entry *curr = list_entry(e,struct supp_page_table_entry,elem);
 		if(ROUND_DOWN((uintptr_t)ptr, PGSIZE) == (uintptr_t)curr->upage) return true;
 	}
-	
-	
+
+	//check if addr fits heuristic of stack growth
+	char* faddr = (char*)ptr;
+	//addr seems to come from a PUSH or PUSHA instruction, or is between PHYS_BASE and esp
+	if(esp_ptr - 4 == faddr || esp_ptr - 32 == faddr || (faddr >= esp_ptr && faddr < (char*) PHYS_BASE)) 
+	{
+		//also ensure that stack is well-formed: esp is smaller than PHYS_BASE and stack size reasonable
+		if(esp_ptr < (char*) PHYS_BASE && (char*) PHYS_BASE < STACK_SZ + esp_ptr)
+		{
+			return true;
+		}
+	}
 	return false;
 }
+
+
 /* closes the files opened by thread t	*/
 void close_files(struct thread *t)
 {
@@ -133,7 +149,7 @@ int stdout_write (const char *buffer, unsigned size)
 /* checks if the length of the filename is within legal limits. */
 bool check_filename(const char *file)
 {
-	if(!check_pointer((void *)file))
+	if(!syscall_check_pointer((void *)file,esp))
 		exit(-1);
 	return (strlen(file)>0)&&(strlen(file)<15);
 }
@@ -241,7 +257,7 @@ void exit (int status)
 /* write system call */
 int write (int fd, const void *buffer, unsigned size)
 {
-	if(!check_pointer((void *)buffer))
+	if(!syscall_check_pointer((void *)buffer,esp))
 		exit(-1);
 		
 	/* In case of writing to STDOUT, call stdout_write() */
@@ -262,8 +278,11 @@ int write (int fd, const void *buffer, unsigned size)
 /* read system call. performs read from the input stream. */
 int read (int fd, void *buffer, unsigned size)
 {
-	if(!check_pointer(buffer)||fd==STDOUT_FILENO)
+	if(!syscall_check_pointer(buffer,esp)||fd==STDOUT_FILENO)
+	{	
+		//printf("problem here \n");
 		exit(-1);
+	}
 	
 	/*In case of reading from the stanford input, input_getc() gets used to read characters from the STDIN. */
 	if(fd==STDIN_FILENO)
@@ -287,7 +306,7 @@ int read (int fd, void *buffer, unsigned size)
 /* performs the exec system call. */
 int exec (const char *cmd_line)
 {
-	if(!check_pointer((void *)cmd_line))
+	if(!syscall_check_pointer((void *)cmd_line,esp))
 		exit(-1);
 	//printf("cmd '%s'\n",cmd_line);
 	int t=process_execute(cmd_line);
@@ -422,9 +441,9 @@ static void
 syscall_handler (struct intr_frame *f UNUSED) 
 {
 	int i=0;
-	if(!check_pointer(f->esp))
+	if(!syscall_check_pointer(f->esp,(char*)f->esp))
 		exit(-1);
-
+	esp = (char*) f->esp;
 	/* finds the system call number by dereferencing the stack pointer. */
 	int syscall_num = *(int *)f->esp;
 	
@@ -433,7 +452,7 @@ syscall_handler (struct intr_frame *f UNUSED)
 	unsigned int arguments[num_arguments];
 	for(i=0;i<num_arguments;i++)
 	{
-		if(!check_pointer(f->esp + (4*(i+1))))
+		if(!syscall_check_pointer(f->esp + (4*(i+1)),esp))
 			exit(-1);
 		arguments[i]=*((unsigned int *)(f->esp + (4*(i+1))));
 	}

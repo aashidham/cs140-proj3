@@ -162,15 +162,21 @@ page_fault (struct intr_frame *f)
   not_present = (f->error_code & PF_P) == 0;
   write = (f->error_code & PF_W) != 0;
   user = (f->error_code & PF_U) != 0;
-
+  
   /* To implement virtual memory, delete the rest of the function
      body, and replace it with code that brings in the page to
      which fault_addr refers. */
-  /*printf ("Page fault at %p: %s | %s | %s \n",
+  /*printf ("Page fault at %p: %s | %s | %s (esp:%p) \n",
           fault_addr,
           not_present ? "not present page" : "writing r/o page",
           write ? "writing access" : "reading access",
-          user ? "user access" : "kernel access");*/
+          user ? "user access" : "kernel access",f->esp);*/
+  if(user && !syscall_check_pointer(fault_addr,f->esp))
+  {
+    //printf("invalid address %p, rounded is %p, compared to esp is %p\n",fault_addr,(void*)ROUND_DOWN((uintptr_t)fault_addr,PGSIZE),f->esp);
+   	exit(-1);
+  }
+
   
   //bool found = false;
   struct list_elem *e;
@@ -222,12 +228,9 @@ page_fault (struct intr_frame *f)
 			return;
           }
         }
-   //if(!found)
-   		//printf("page fault not found.\n");
-   	char* esp = (char*) f->esp;
-   	char* faddr = (char*) fault_addr;
-   	if(esp - 4 == faddr || esp - 32 == faddr || (faddr >= esp && faddr < PHYS_BASE))
-   	{
+    
+    //if fault is not in supp table, it has to be part of stack
+   		//printf("page fault %p (rounded %p) found as stack extension! esp:%p\n",fault_addr,(void*)ROUND_DOWN((uintptr_t)fault_addr,PGSIZE),f->esp);
    		uint8_t *kpage = palloc_get_page (PAL_USER|PAL_ZERO);
    		if (kpage == NULL)
 			exit(-1);
@@ -238,13 +241,6 @@ page_fault (struct intr_frame *f)
 			exit(-1);
 		}
 		return;
-	}
-
-
-   		
-   //address is not valid
-   //printf("invalid address %p\n",fault_addr);
-   exit(-1);
 }
 
 
