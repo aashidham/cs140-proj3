@@ -166,7 +166,7 @@ page_fault (struct intr_frame *f)
   /* To implement virtual memory, delete the rest of the function
      body, and replace it with code that brings in the page to
      which fault_addr refers. */
-  /*printf ("Page fault at %p: %s | %s | %s \n",
+  /*(printf ("Page fault at %p: %s | %s | %s \n",
           fault_addr,
           not_present ? "not present page" : "writing r/o page",
           write ? "writing access" : "reading access",
@@ -224,6 +224,22 @@ page_fault (struct intr_frame *f)
         }
    //if(!found)
    		//printf("page fault not found.\n");
+   	char* esp = (char*) f->esp;
+   	if(esp - 4 == (char*)fault_addr || esp - 32 == (char*)fault_addr)
+   	{
+   		uint8_t *kpage = palloc_get_page (PAL_USER|PAL_ZERO);
+   		if (kpage == NULL)
+			exit(-1);
+		uint8_t *upage = (void*)ROUND_DOWN((uintptr_t)fault_addr,PGSIZE);
+		if (!install_page_handler (upage, kpage, write)) 
+		{
+			palloc_free_page (kpage);
+			exit(-1);
+		}
+		return;
+	}
+
+
    		
    //address is not valid
    //printf("invalid address %p\n",fault_addr);
