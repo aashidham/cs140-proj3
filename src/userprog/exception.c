@@ -219,12 +219,6 @@ page_fault (struct intr_frame *f)
 			  palloc_free_page (kpage);
 			  exit(-1);
 			}
-			/*remove page from supplementary page table. mmap calls handle teardown differently.*/
-			if(!curr->mmaped_file)
-			{
-				list_remove(e);
-				free(curr);
-			}
 			return;
           }
         }
