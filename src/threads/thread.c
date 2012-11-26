@@ -13,6 +13,7 @@
 #include "threads/vaddr.h"
 #include "threads/malloc.h"
 #include "threads/malloc.h"
+#include "devices/block.h"
 #ifdef USERPROG
 #include "userprog/process.h"
 #endif
@@ -95,6 +96,7 @@ thread_init (void)
   list_init (&ready_list);
   list_init (&all_list);
   list_init (&frame_table);
+  list_init (&swap_table);
 
   /* Set up a thread structure for the running thread. */
   initial_thread = running_thread ();

@@ -23,13 +23,18 @@
 
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
+void evict_algorithm(void);
 static struct child *get_child_pointer(tid_t tid);
 static void notify_parent(struct thread *my_parent);
+static int frame_entry = 0;
 
 struct frame_table_entry
 {
 	struct list_elem elem;
-	uint8_t *kpage;
+	void *kpage;
+	void *upage;
+	struct thread *t;
+	bool writable;
 };
 
 
@@ -53,6 +58,7 @@ static void notify_parent(struct thread *my_parent)
 	lock_release(&my_parent->status_change_lock);
 }
 
+
 /* Starts a new thread running a user program loaded from
    FILENAME.  The new thread may be scheduled (and may even exit)
    before process_execute() returns.  Returns the new process's
@@ -65,7 +71,7 @@ process_execute (const char *file_name)
 
 	/* Make a copy of FILE_NAME.
 	Otherwise there's a race between the caller and load(). */
-	fn_copy = palloc_get_page (0);
+	fn_copy = get_page (0);
 	if (fn_copy == NULL)
 		return TID_ERROR;
 	strlcpy (fn_copy, file_name, PGSIZE);
@@ -412,6 +418,20 @@ static bool load_segment (off_t ofs, uint8_t *upage,
                           uint32_t read_bytes, uint32_t zero_bytes,
                           bool writable);
 
+void init_swap_table(void)
+{
+  if(!swap_block)  swap_block = block_get_role (BLOCK_SWAP);
+  int total_sector_pages = (block_size(swap_block) * BLOCK_SECTOR_SIZE ) / PGSIZE;
+  int i;
+  for(i = 0; i < total_sector_pages; i++)
+  {
+  	struct swap_table_entry* curr = malloc(sizeof(struct swap_table_entry));
+  	curr->slot = i * (PGSIZE/BLOCK_SECTOR_SIZE);
+  	curr->taken = 0;
+  	list_push_back(&swap_table,&curr->elem);
+  }
+}
+
 /* Loads an ELF executable from FILE_NAME into the current thread.
    Stores the executable's entry point into *EIP
    and its initial stack pointer into *ESP.
@@ -432,6 +452,7 @@ load (const char *file_name, void (**eip) (void), void **esp)
   list_init(&t->supp_page_table);
   if (t->pagedir == NULL) 
     goto done;
+  if(list_empty(&swap_table)) init_swap_table();
   process_activate ();
   
   /* Open executable file. */
@@ -637,7 +658,7 @@ setup_stack (void **esp)
   uint8_t *kpage;
   bool success = false;
 
-  kpage = palloc_get_page (PAL_USER | PAL_ZERO);
+  kpage = get_page (PAL_USER | PAL_ZERO);
   if (kpage != NULL) 
     {
       success = install_page (((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
@@ -676,7 +697,10 @@ install_page (void *upage, void *kpage, bool writable)
  if(success)
  {
  	struct frame_table_entry* curr = malloc(sizeof(struct frame_table_entry));
- 	curr->kpage = (uint8_t *)kpage;
+ 	curr->kpage = kpage;
+ 	curr->upage = upage;
+ 	curr->t = thread_current();
+ 	curr->writable = writable;
  	list_push_back(&frame_table,&curr->elem);
  	//printf("Page table entry for %s thread at %p\n",t->name,upage);
  }
@@ -693,4 +717,111 @@ install_page (void *upage, void *kpage, bool writable)
         }*/
 
  return success;
+}
+
+/* If possible, write the page at upage to the swap device. Must have created swap_table_entry with upage. Returns true on success. */
+bool write_page_to_swap(void* upage, struct thread *t)
+{
+	struct list_elem *e;
+	for(e = list_begin(&swap_table); e != list_end(&swap_table); e = list_next(e))
+	{
+		struct swap_table_entry *curr = list_entry(e,struct swap_table_entry,elem);
+		if(curr->upage == upage && curr->t == t)
+		{
+			int i;
+			int num_sectors = PGSIZE/BLOCK_SECTOR_SIZE;
+			for(i = 0; i < num_sectors; i++)
+			{
+				block_sector_t slot = curr->slot + i;
+				block_write(swap_block,slot, (char*) upage + i*BLOCK_SECTOR_SIZE);
+			}
+			return true;
+		}
+	}
+	return false;
+}
+
+/*Find the address at upage if present in the swap device, and write it to kpage. The user should also free the entry for other memory. Return true on success.*/
+bool read_page_from_swap(void* upage, void* kpage, struct thread *t)
+{
+	struct list_elem *e;
+	for(e = list_begin(&swap_table); e != list_end(&swap_table); e = list_next(e))
+	{
+		struct swap_table_entry *curr = list_entry(e,struct swap_table_entry,elem);
+		if(curr->upage == upage && curr->t == t)
+		{
+			int i;
+			int num_sectors = PGSIZE/BLOCK_SECTOR_SIZE;
+			for(i = 0; i < num_sectors; i++)
+			{
+				block_sector_t slot = curr->slot + i;
+				block_read(swap_block,slot, (char*) kpage + i*BLOCK_SECTOR_SIZE);
+			}
+			return true;
+		}
+	}
+	return false;
+}
+
+void evict_algorithm()
+{	
+	bool begin = false;
+	int i=0;
+	struct list_elem *e = list_begin (&frame_table);
+	while(true)
+    {
+    	if(i==frame_entry)
+    		begin = true;
+    	if(!begin)
+    		i++;
+    	else
+    	{
+    		if (e == list_end (&frame_table))
+    			e = list_begin (&frame_table);
+    		
+    		struct frame_table_entry *curr = list_entry(e,struct frame_table_entry,elem);
+    		frame_entry = (frame_entry+1)%(list_size(&frame_table)-1);
+    		if(curr->t == thread_current() && pagedir_is_accessed(curr->t->pagedir,curr->upage))
+    		{
+    			pagedir_set_accessed(curr->t->pagedir,curr->upage,false);
+    			e = list_next(e);
+    		}
+    		else
+    		{
+    			if(curr->t == thread_current() && pagedir_is_dirty(curr->t->pagedir,curr->upage)) 
+    			{
+    					struct list_elem *e;
+    					bool space_in_swap = false;
+    					
+    					//add entry to swap table
+						for(e = list_begin(&swap_table); e != list_end(&swap_table); e = list_next(e))
+						{
+							struct swap_table_entry *curr_swap = list_entry(e,struct swap_table_entry,elem);
+							if(!curr_swap->taken)
+							{
+								space_in_swap = true;
+								curr_swap->upage = curr->upage;
+								curr_swap->t = curr->t;
+								curr_swap->writable = curr->writable;
+								curr_swap->taken = true;
+								break;
+							}
+						}
+						if(!space_in_swap) PANIC("Swap full");
+						
+						//write to swap device
+						if(!write_page_to_swap(curr->upage,curr->t)) PANIC("Swap write failed");
+						//else printf("Swap creation successful for %p upage! Here is a char: %c\n",curr->upage,*(char*)curr->upage);
+    			}
+    			//evict page and return
+			   void *kpage =  pagedir_get_page(curr->t->pagedir,curr->upage);
+			   //printf("eviction succeeded for %p!\n",curr->upage);
+			   palloc_free_page(kpage);
+			   pagedir_clear_page(curr->t->pagedir,curr->upage);
+			   list_remove(e);
+			   free(curr);
+			   return;
+    		}
+    	}
+    }
 }

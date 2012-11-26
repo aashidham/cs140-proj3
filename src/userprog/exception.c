@@ -166,17 +166,39 @@ page_fault (struct intr_frame *f)
   /* To implement virtual memory, delete the rest of the function
      body, and replace it with code that brings in the page to
      which fault_addr refers. */
-  /*printf ("Page fault at %p: %s | %s | %s (esp:%p) \n",
-          fault_addr,
-          not_present ? "not present page" : "writing r/o page",
-          write ? "writing access" : "reading access",
-          user ? "user access" : "kernel access",f->esp);*/
+  //printf ("Page fault at %p: %s | %s | %s (esp:%p) (eip:%p) \n",(void*)ROUND_DOWN((uintptr_t)fault_addr,PGSIZE),not_present ? "not present page" : "writing r/o page",write ? "writing access" : "reading access",user ? "user access" : "kernel access",f->esp,f->eip);
   if(user && !syscall_check_pointer(fault_addr,f->esp))
   {
     //printf("invalid address %p, rounded is %p, compared to esp is %p\n",fault_addr,(void*)ROUND_DOWN((uintptr_t)fault_addr,PGSIZE),f->esp);
    	exit(-1);
   }
 
+   uint8_t *kpage = get_page (PAL_USER);
+   if (kpage == NULL)
+	 exit(-1);
+  uint8_t *upage = (uint8_t*)ROUND_DOWN((uintptr_t)fault_addr, PGSIZE);
+  if(read_page_from_swap(upage,kpage,t))
+  {
+	struct list_elem *e;
+	for(e = list_begin(&swap_table); e != list_end(&swap_table); e = list_next(e))
+	{
+		struct swap_table_entry *curr = list_entry(e,struct swap_table_entry,elem);
+		//if (curr->taken) printf("curr in swap table is taken with upage %p in thread %s\n",curr->upage,curr->t->name);
+		if(curr->upage == upage && curr->t == t && curr->taken)
+		{
+			if (!install_page_handler (upage, kpage, curr->writable)) 
+			{
+			  palloc_free_page (kpage);
+			  exit(-1);
+			}
+			//printf("Swap recovery successful for %p! Here is a character: %c\n",upage,*(char*)kpage);
+			
+			//free the space up
+			curr->taken = false;
+			return;
+		}
+	}
+  }
   
   //bool found = false;
   struct list_elem *e;
@@ -184,7 +206,7 @@ page_fault (struct intr_frame *f)
            e = list_next (e))
         {
           struct supp_page_table_entry *curr = list_entry(e,struct supp_page_table_entry,elem);
-          uint8_t *upage = curr->upage;
+          upage = curr->upage;
           if(upage == (uint8_t *) ROUND_DOWN((uintptr_t)fault_addr, PGSIZE))
           {
           	size_t page_read_bytes = curr->page_read_bytes;
@@ -193,9 +215,7 @@ page_fault (struct intr_frame *f)
           	//printf("page fault found at %p! (%s) (offset: %d) (eip:%d,%p)\n",upage,writable? "writable":"not writable",(int)curr->ofs,f->cs,f->eip);
           	//found = true;
 			/* Get a page of memory. */
-			uint8_t *kpage = palloc_get_page (PAL_USER);
-			if (kpage == NULL)
-			  exit(-1);
+
 			struct file* file;
 			if(!curr->mmaped_file)
 				file = t->my_binary;
@@ -212,7 +232,7 @@ page_fault (struct intr_frame *f)
 			  exit(-1);
 			}
 			memset (kpage + page_read_bytes, 0, page_zero_bytes);
-	  
+
 			/* Add the page to the process's address space. */
 			if (!install_page_handler (upage, kpage, writable)) 
 			{
@@ -222,13 +242,15 @@ page_fault (struct intr_frame *f)
 			return;
           }
         }
+        
+        palloc_free_page(kpage);
     
     //if fault is not in supp table, it has to be part of stack
    		//printf("page fault %p (rounded %p) found as stack extension! esp:%p\n",fault_addr,(void*)ROUND_DOWN((uintptr_t)fault_addr,PGSIZE),f->esp);
-   		uint8_t *kpage = palloc_get_page (PAL_USER|PAL_ZERO);
+   		kpage = get_page (PAL_USER|PAL_ZERO);
    		if (kpage == NULL)
 			exit(-1);
-		uint8_t *upage = (void*)ROUND_DOWN((uintptr_t)fault_addr,PGSIZE);
+		upage = (void*)ROUND_DOWN((uintptr_t)fault_addr,PGSIZE);
 		if (!install_page_handler (upage, kpage, write)) 
 		{
 			palloc_free_page (kpage);

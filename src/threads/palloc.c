@@ -10,6 +10,7 @@
 #include "threads/loader.h"
 #include "threads/synch.h"
 #include "threads/vaddr.h"
+#include "userprog/process.h"
 
 /* Page allocator.  Hands out memory in page-size (or
    page-multiple) chunks.  See malloc.h for an allocator that
@@ -99,6 +100,21 @@ palloc_get_multiple (enum palloc_flags flags, size_t page_cnt)
 
   return pages;
 }
+
+void * get_page(enum palloc_flags flags)
+{
+	void *kpage = palloc_get_page(flags);
+	if(kpage == NULL) 
+	{
+		evict_algorithm();
+		kpage = palloc_get_page(flags);
+		//if(kpage == NULL) printf ("eviction didn't work!\n");
+		//else printf ("eviction did work!\n");
+		return kpage;
+	}
+	else return kpage;
+}
+
 
 /* Obtains a single free page and returns its kernel virtual
    address.
